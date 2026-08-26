@@ -3,206 +3,118 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Southeast Asia Fire & Haze News Tracker</title>
+  <title>SEA Fire & Haze Tracker</title>
   <style>
-    :root {
-      --bg-color: #f8fafc;
-      --card-bg: #ffffff;
-      --text-main: #0f172a;
-      --text-muted: #64748b;
-      --border-color: #e2e8f0;
-      --primary: #d97706;
-      --primary-hover: #b45309;
-      --radius: 8px;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-main); line-height: 1.5; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    
-    header { margin-bottom: 24px; }
-    h1 { font-size: 1.75rem; color: var(--text-main); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-    p.subtitle { color: var(--text-muted); font-size: 0.95rem; }
-
-    /* Controls Bar */
-    .controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; margin-bottom: 20px; background: var(--card-bg); padding: 16px; border-radius: var(--radius); border: 1px solid var(--border-color); }
-    input, select { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); font-size: 0.9rem; outline: none; background-color: #fff; }
-    input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15); }
-
-    /* Metrics Bar */
-    .metrics { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
-
-    /* Table & Responsive Container */
-    .table-container { background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border-color); overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
-    th, td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
-    th { background-color: #f1f5f9; color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover { background-color: #f8fafc; }
-
-    /* Tags & Components */
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; background-color: #fef3c7; color: #92400e; }
-    a.article-link { color: var(--primary); text-decoration: none; font-weight: 500; }
-    a.article-link:hover { text-decoration: underline; color: var(--primary-hover); }
-    .domain-tag { font-size: 0.8rem; color: var(--text-muted); display: block; margin-top: 2px; }
-
-    /* States */
-    .status-msg { padding: 40px; text-align: center; color: var(--text-muted); font-size: 0.95rem; }
-
-    /* Mobile Layout Adjustments */
-    @media (max-width: 768px) {
-      .controls { grid-template-columns: 1fr; }
-      th:nth-child(4), td:nth-child(4) { display: none; } /* Hide Language on small screens */
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f8f9fa; color: #333; }
+    header { background: #d9534f; color: white; padding: 1.5rem 2rem; }
+    h1 { margin: 0; font-size: 1.8rem; }
+    p.subtitle { margin: 0.25rem 0 0 0; opacity: 0.9; }
+    main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    .controls { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    input, select { padding: 0.6rem 1rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; flex: 1; min-width: 200px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem; }
+    .card { background: white; border-radius: 6px; padding: 1.25rem; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; flex-direction: column; justify-content: space-between; }
+    .card h3 { margin: 0 0 0.5rem 0; font-size: 1.05rem; line-height: 1.4; }
+    .card h3 a { color: #1a0dab; text-decoration: none; }
+    .card h3 a:hover { text-decoration: underline; }
+    .meta { font-size: 0.825rem; color: #666; margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
+    .badge { background: #e9ecef; color: #495057; padding: 0.2rem 0.5rem; border-radius: 3px; font-weight: 600; font-size: 0.75rem; }
+    .download-btn { display: inline-block; background: #0275d8; color: white; padding: 0.5rem 1rem; text-decoration: none; border-radius: 4px; font-size: 0.9rem; }
+    .download-container { margin-bottom: 1.5rem; display: flex; justify-content: flex-end; }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <header>
-      <h1>🔥 SEA Fire & Haze Tracker</h1>
-      <p class="subtitle">Aggregated near real-time media coverage over the last 30 days via GDELT.</p>
-    </header>
+  <header>
+    <h1>🔥 SEA Fire & Haze News Tracker</h1>
+    <p class="subtitle">Real-time media monitoring across Southeast Asia (Updated Daily)</p>
+  </header>
 
-    <!-- Filter Controls -->
+  <main>
+    <div class="download-container">
+      <a href="sea_fire_haze_news_30d.csv" class="download-btn" download>📥 Download Raw CSV (30 Days)</a>
+    </div>
+
     <div class="controls">
-      <input type="text" id="searchInput" placeholder="Search by title or domain..." oninput="filterData()">
-      
-      <select id="regionSelect" onchange="filterData()">
-        <option value="">All Regions</option>
-      </select>
-
-      <select id="sortSelect" onchange="filterData()">
-        <option value="newest">Sort: Newest First</option>
-        <option value="oldest">Sort: Oldest First</option>
+      <input type="text" id="searchInput" placeholder="Search headline or domain...">
+      <select id="regionFilter">
+        <option value="ALL">All Regions</option>
       </select>
     </div>
 
-    <!-- Metrics -->
-    <div class="metrics">
-      <span id="recordCount">Loading records...</span>
-      <span id="lastUpdated"></span>
-    </div>
-
-    <!-- Data Table -->
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 140px;">Date (UTC)</th>
-            <th style="width: 160px;">Region</th>
-            <th>Article Title & Domain</th>
-            <th style="width: 100px;">Language</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody">
-          <tr><td colspan="4" class="status-msg">Fetching dataset...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+    <div id="articlesGrid" class="grid"></div>
+  </main>
 
   <script>
-    let rawData = [];
+    let rawArticles = [];
 
-    // Fetch static JSON produced by Python script
-    async function loadData() {
+    async function init() {
       try {
-        const response = await fetch('data.json');
-        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-        rawData = await response.json();
+        const res = await fetch('data.json');
+        rawArticles = await res.json();
         
-        populateRegionFilter(rawData);
-        filterData();
+        populateRegions(rawArticles);
+        renderArticles(rawArticles);
       } catch (err) {
-        document.getElementById('tableBody').innerHTML = `
-          <tr><td colspan="4" class="status-msg" style="color:#ef4444;">
-            Failed to load <code>docs/data.json</code>. Verify that GitHub Actions has run and generated the file.
-          </td></tr>`;
-        document.getElementById('recordCount').innerText = "0 records found";
+        document.getElementById('articlesGrid').innerHTML = `<p>Failed to load data. Ensures script has executed.</p>`;
       }
     }
 
-    // Populate dynamic Region options based on actual dataset values
-    function populateRegionFilter(data) {
-      const regionSelect = document.getElementById('regionSelect');
-      const regions = [...new Set(data.map(item => item.matched_region).filter(Boolean))].sort();
-      
-      regions.forEach(region => {
-        const option = document.createElement('option');
-        option.value = region;
-        option.textContent = region.replace(/_/g, ' ');
-        regionSelect.appendChild(option);
+    function populateRegions(articles) {
+      const regions = [...new Set(articles.map(a => a.matched_region))].sort();
+      const select = document.getElementById('regionFilter');
+      regions.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r;
+        opt.textContent = r.replace('_', ' ');
+        select.appendChild(opt);
       });
     }
 
-    // Filter, Sort, and Render UI
-    function filterData() {
-      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-      const selectedRegion = document.getElementById('regionSelect').value;
-      const sortOrder = document.getElementById('sortSelect').value;
+    function renderArticles(articles) {
+      const grid = document.getElementById('articlesGrid');
+      grid.innerHTML = '';
 
-      // 1. Filter
-      let filtered = rawData.filter(item => {
-        const matchesSearch = (item.title && item.title.toLowerCase().includes(searchTerm)) ||
-                              (item.domain && item.domain.toLowerCase().includes(searchTerm));
-        const matchesRegion = !selectedRegion || item.matched_region === selectedRegion;
-        return matchesSearch && matchesRegion;
-      });
-
-      // 2. Sort
-      filtered.sort((a, b) => {
-        const dateA = new Date(a.seen_date || 0);
-        const dateB = new Date(b.seen_date || 0);
-        return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
-      });
-
-      // 3. Render
-      renderTable(filtered);
-    }
-
-    function renderTable(data) {
-      const tbody = document.getElementById('tableBody');
-      const recordCount = document.getElementById('recordCount');
-
-      recordCount.innerText = `Showing ${data.length.toLocaleString()} of ${rawData.length.toLocaleString()} articles`;
-
-      if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" class="status-msg">No matching articles found.</td></tr>`;
+      if (articles.length === 0) {
+        grid.innerHTML = `<p>No matching news items found.</p>`;
         return;
       }
 
-      tbody.innerHTML = data.map(item => {
-        const formattedDate = item.seen_date 
-          ? new Date(item.seen_date).toISOString().replace('T', ' ').substring(0, 16)
-          : 'N/A';
-
-        const regionDisplay = (item.matched_region || 'Unknown').replace(/_/g, ' ');
-
-        return `
-          <tr>
-            <td style="white-space: nowrap; color: var(--text-muted);">${formattedDate}</td>
-            <td><span class="badge">${escapeHtml(regionDisplay)}</span></td>
-            <td>
-              <a class="article-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
-                ${escapeHtml(item.title || 'Untitled Article')}
-              </a>
-              <span class="domain-tag">${escapeHtml(item.domain || '')}</span>
-            </td>
-            <td style="text-transform: uppercase; color: var(--text-muted);">${escapeHtml(item.language || 'eng')}</td>
-          </tr>
+      articles.forEach(art => {
+        const dateStr = art.seen_date ? new Date(art.seen_date).toLocaleDateString() : 'N/A';
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div>
+            <h3><a href="${art.url}" target="_blank" rel="noopener">${art.title || 'Untitled'}</a></h3>
+          </div>
+          <div class="meta">
+            <span>${art.domain || 'Source'} • ${dateStr}</span>
+            <span class="badge">${art.matched_region}</span>
+          </div>
         `;
-      }).join('');
+        grid.appendChild(card);
+      });
     }
 
-    function escapeHtml(str) {
-      return String(str || '').replace(/[&<>"']/g, match => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      }[match]));
+    function filterData() {
+      const search = document.getElementById('searchInput').value.lowerCase();
+      const region = document.getElementById('regionFilter').value;
+
+      const filtered = rawArticles.filter(a => {
+        const matchesSearch = (a.title && a.title.toLowerCase().includes(search)) || 
+                              (a.domain && a.domain.toLowerCase().includes(search));
+        const matchesRegion = (region === 'ALL' || a.matched_region === region);
+        return matchesSearch && matchesRegion;
+      });
+
+      renderArticles(filtered);
     }
 
-    // Initial trigger on load
-    document.addEventListener('DOMContentLoaded', loadData);
+    document.getElementById('searchInput').addEventListener('input', filterData);
+    document.getElementById('regionFilter').addEventListener('change', filterData);
+
+    init();
   </script>
 </body>
 </html>
