@@ -8,14 +8,14 @@ import pandas as pd
 
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
-# Search terms for haze and fire hazards
+# Keywords targeting fire and haze hazards
 hazard_terms = (
     '(haze OR "transboundary haze" OR smog OR jerebu OR "kabut asap" '
     'OR "forest fire" OR wildfire OR "land fire" OR "peat fire" '
     'OR karhutla OR "biomass burning" OR "open burning")'
 )
 
-# Target Southeast Asia geographic coverage
+# Southeast Asia country groups
 regions = {
     "Indonesia": "Indonesia",
     "Malaysia": "Malaysia",
@@ -25,19 +25,19 @@ regions = {
     "Philippines": "Philippines",
 }
 
-# 30-day time window
+# 30-day rolling time frame
 end = datetime.now(timezone.utc)
 start = end - timedelta(days=30)
 window_days = 5
 
 
 def gdelt_dt(dt):
-    """Formats datetime object to GDELT YYYYMMDDHHMMSS format."""
+    """Format datetime object into GDELT-compliant string."""
     return dt.strftime("%Y%m%d%H%M%S")
 
 
 def canonical_url(url):
-    """Normalizes URL by stripping query params, fragments, and trailing slashes."""
+    """Normalize URL by stripping fragments, query params, and trailing slashes."""
     if not isinstance(url, str) or not url:
         return ""
     parts = urlsplit(url)
@@ -45,7 +45,7 @@ def canonical_url(url):
 
 
 def normalize_title(title):
-    """Cleans title string for syndicated duplicate detection."""
+    """Clean title string for duplicate title detection."""
     if not isinstance(title, str):
         return ""
     title = title.lower()
@@ -57,7 +57,7 @@ def normalize_title(title):
 rows = []
 cursor = start
 
-print("Starting GDELT data collection...")
+print("Starting GDELT data retrieval...")
 
 while cursor < end:
     window_end = min(cursor + timedelta(days=window_days), end)
@@ -65,7 +65,7 @@ while cursor < end:
     for region_name, region_query in regions.items():
         query = f"{hazard_terms} {region_query}"
 
-        # API Parameter Casing: STARTDATETIME & ENDDATETIME must be uppercase for GDELT
+        # Parameter names MUST be STARTDATETIME & ENDDATETIME in uppercase
         params = {
             "query": query,
             "mode": "artlist",
@@ -81,11 +81,11 @@ while cursor < end:
             response.raise_for_status()
             payload = response.json()
         except (requests.RequestException, ValueError) as e:
-            print(f"Warning: Request failed for {region_name} ({cursor.date()} to {window_end.date()}): {e}")
+            print(f"Warning: Failed fetching {region_name} ({cursor.date()} - {window_end.date()}): {e}")
             continue
 
         articles = payload.get("articles", [])
-        print(f"[{cursor.date()}] {region_name}: Retrieved {len(articles)} raw articles.")
+        print(f"[{cursor.date()}] {region_name}: Retrieved {len(articles)} raw items.")
 
         for article in articles:
             rows.append({
@@ -102,14 +102,14 @@ while cursor < end:
                 "query": query,
             })
 
-        # Polite rate limiting to avoid getting throttled by GDELT API
+        # Polite rate-limiting between API calls
         time.sleep(1)
 
     cursor = window_end
 
 df = pd.DataFrame(rows)
 
-# Create hosting directory for GitHub Pages
+# Target static deployment folder
 output_dir = "docs"
 os.makedirs(output_dir, exist_ok=True)
 
@@ -117,17 +117,15 @@ if not df.empty:
     df["canonical_url"] = df["url"].apply(canonical_url)
     df["normalized_title"] = df["title"].apply(normalize_title)
 
-    # 1. Convert to UTC Datetime and Sort FIRST so keep="first" preserves the newest article
+    # Convert date to UTC datetime & sort FIRST to prioritize latest articles during deduplication
     df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
     df = df.sort_values("seen_date", ascending=False, na_position="last")
 
-    # 2. Deduplicate exact matching canonical URLs
+    # Deduplicate canonical URLs and titles
     df = df.drop_duplicates(subset=["canonical_url"], keep="first")
-
-    # 3. Deduplicate syndicated articles with identical titles
     df = df.drop_duplicates(subset=["normalized_title"], keep="first")
 
-    # Export for GitHub Pages static serving
+    # Export dataset to docs/ folder for GitHub Pages
     csv_path = os.path.join(output_dir, "sea_fire_haze_news_30d.csv")
     json_path = os.path.join(output_dir, "data.json")
 
@@ -136,4 +134,4 @@ if not df.empty:
 
     print(f"\nPipeline complete! Successfully saved {len(df):,} de-duplicated articles to '{output_dir}/'.")
 else:
-    print("\nPipeline complete! No articles were retrieved from GDELT.")
+    print("\nPipeline complete! No articles retrieved.")
