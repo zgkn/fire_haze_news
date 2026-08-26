@@ -1,0 +1,39 @@
+name: Aggregate SEA Fire & Haze News
+
+on:
+  schedule:
+    # Runs daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+permissions:
+  contents: write # Enables pushing data updates back to the repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas
+
+      - name: Run GDELT Pipeline
+        run: python .github/scripts/fetch_data.py
+
+      - name: Commit and Push Updated Data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/data.json docs/sea_fire_haze_news_30d.csv
+          git diff-index --quiet HEAD || git commit -m "chore: update 30-day haze dataset [skip ci]"
+          git push
