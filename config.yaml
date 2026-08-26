@@ -1,6 +1,6 @@
+# Simplified keyword list prevents GDELT backend timeout errors
 hazard_terms: >-
-  (haze OR "transboundary haze" OR smog OR jerebu OR "kabut asap" 
-  OR "forest fire" OR wildfire OR karhutla OR "open burning")
+  (haze OR smog OR jerebu OR karhutla OR "forest fire" OR wildfire)
 
 regions:
   Indonesia: "Indonesia"
@@ -14,5 +14,4 @@ gdelt_settings:
   max_records: 250
   sort: "datedesc"
   timespan: "30d"
-  max_workers: 2
-  request_delay: 1.5
+  request_delay: 3.5  # Pause duration (in seconds) between network requests
