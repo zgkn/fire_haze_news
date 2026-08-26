@@ -17,5 +17,5 @@ regions:
 gdelt_settings:
   max_records: 200
   sort: "datedesc"
-  timespan: "30d"
+  timespan: "15d"
   request_delay: 2.5 # Wait 2.5 seconds between requests to prevent API rate limits
