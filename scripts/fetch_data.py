@@ -1,7 +1,6 @@
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlsplit, urlunsplit
 import pandas as pd
 import requests
@@ -11,14 +10,16 @@ API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 
 def load_config(config_path="config.yaml"):
-    """Load settings and queries from external YAML config file."""
+    """Load settings and queries from YAML configuration file."""
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Configuration file not found at '{config_path}'")
+        raise FileNotFoundError(
+            f"Configuration file not found at '{config_path}'"
+        )
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-# Load runtime values from config
+# Load Configuration
 CONFIG = load_config()
 HAZARD_TERMS = CONFIG["hazard_terms"]
 REGIONS = CONFIG["regions"]
@@ -43,25 +44,48 @@ def normalize_title(title):
     return re.sub(r"\s+", " ", title).strip()
 
 
-def fetch_with_retry(params, max_retries=4):
-    """Fetch GDELT data with exponential backoff on timeouts or 429 rate limits."""
-    delay = 2
+def fetch_with_retry(params, max_retries=3):
+    """Executes requests sequentially with adaptive delay handling."""
+    delay = 5
+    # Use explicit browser user-agent to bypass basic firewall blocks
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
     for attempt in range(max_retries):
         try:
-            response = requests.get(API, params=params, timeout=(10, 45))
-            if response.status_code == 429:
-                print(f"⚠️ Rate limited (429). Retrying in {delay}s...")
+            # Extended connect and read timeouts (30s, 60s) for heavy queries
+            response = requests.get(
+                API, params=params, headers=headers, timeout=(30, 60)
+            )
+
+            if response.status_code in (429, 503, 504):
+                print(
+                    f"⚠️ Received status {response.status_code}. Pausing for {delay}s..."
+                )
                 time.sleep(delay)
                 delay *= 2
                 continue
+
             response.raise_for_status()
             return response.json()
+
+        except requests.exceptions.Timeout:
+            print(
+                f"⏱️ Attempt {attempt + 1}/{max_retries} timed out. Retrying in {delay}s..."
+            )
+            time.sleep(delay)
+            delay *= 2
         except (requests.exceptions.RequestException, ValueError) as e:
             if attempt == max_retries - 1:
-                print(f"❌ Permanent failure after {max_retries} retries: {e}")
+                print(f"❌ Failed after {max_retries} retries: {e}")
                 return None
             time.sleep(delay)
             delay *= 2
+
     return None
 
 
@@ -76,7 +100,9 @@ def fetch_region_data(region_name, region_query):
         "TIMESPAN": SETTINGS.get("timespan", "30d"),
     }
 
-    time.sleep(SETTINGS.get("request_delay", 1.5))
+    # Delay between batch execution loops
+    time.sleep(SETTINGS.get("request_delay", 3.5))
+
     payload = fetch_with_retry(params)
     results = []
 
@@ -98,44 +124,40 @@ def fetch_region_data(region_name, region_query):
                 }
             )
     else:
-        print(f"⚠️ [{region_name}] No articles returned or request failed.")
+        print(f"⚠️ [{region_name}] No articles returned or query dropped.")
 
     return results
 
 
-if __name__ == "__main__":
-    print("Starting resilient GDELT retrieval...")
-    all_rows = []
-    max_workers = SETTINGS.get("max_workers", 2)
+# Direct Sequential Execution Loop
+print("Starting sequential GDELT extraction...")
+all_rows = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(fetch_region_data, region_name, region_query)
-            for region_name, region_query in REGIONS.items()
-        ]
-        for future in as_completed(futures):
-            all_rows.extend(future.result())
+for region_name, region_query in REGIONS.items():
+    print(f"Fetching data for: {region_name}...")
+    region_results = fetch_region_data(region_name, region_query)
+    all_rows.extend(region_results)
 
-    df = pd.DataFrame(all_rows)
-    output_dir = "docs"
-    os.makedirs(output_dir, exist_ok=True)
+df = pd.DataFrame(all_rows)
+output_dir = "docs"
+os.makedirs(output_dir, exist_ok=True)
 
-    if not df.empty:
-        df["canonical_url"] = df["url"].apply(canonical_url)
-        df["normalized_title"] = df["title"].apply(normalize_title)
-        df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
-        df = df.sort_values("seen_date", ascending=False, na_position="last")
-        df = df.drop_duplicates(subset=["canonical_url"], keep="first")
-        df = df.drop_duplicates(subset=["normalized_title"], keep="first")
+if not df.empty:
+    df["canonical_url"] = df["url"].apply(canonical_url)
+    df["normalized_title"] = df["title"].apply(normalize_title)
+    df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
+    df = df.sort_values("seen_date", ascending=False, na_position="last")
+    df = df.drop_duplicates(subset=["canonical_url"], keep="first")
+    df = df.drop_duplicates(subset=["normalized_title"], keep="first")
 
-        csv_path = os.path.join(output_dir, "sea_fire_haze_news_30d.csv")
-        json_path = os.path.join(output_dir, "data.json")
+    csv_path = os.path.join(output_dir, "sea_fire_haze_news_30d.csv")
+    json_path = os.path.join(output_dir, "data.json")
 
-        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-        df.to_json(json_path, orient="records", date_format="iso")
+    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    df.to_json(json_path, orient="records", date_format="iso")
 
-        print(
-            f"\n🎉 Successfully saved {len(df):,} de-duplicated articles to '{output_dir}/'."
-        )
-    else:
-        print("\nNo articles retrieved.")
+    print(
+        f"\n🎉 Extraction successful. Saved {len(df):,} deduplicated articles to '{output_dir}/'."
+    )
+else:
+    print("\nNo articles retrieved.")
