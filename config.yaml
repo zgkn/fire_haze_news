@@ -1,17 +1,21 @@
-# Simplified keyword list prevents GDELT backend timeout errors
 hazard_terms: >-
   (haze OR smog OR jerebu OR karhutla OR "forest fire" OR wildfire)
 
+# Every country separated into individual query keys
 regions:
   Indonesia: "Indonesia"
   Malaysia: "Malaysia"
-  Singapore_Brunei: "(Singapore OR Brunei)"
-  Thailand_Laos_Myanmar: "(Thailand OR Laos OR Myanmar)"
-  Vietnam_Cambodia: "(Vietnam OR Cambodia)"
+  Singapore: "Singapore"
+  Brunei: "Brunei"
+  Thailand: "Thailand"
+  Laos: "Laos"
+  Myanmar: "Myanmar"
+  Vietnam: "Vietnam"
+  Cambodia: "Cambodia"
   Philippines: "Philippines"
 
 gdelt_settings:
-  max_records: 250
+  max_records: 200
   sort: "datedesc"
   timespan: "30d"
-  request_delay: 3.5  # Pause duration (in seconds) between network requests
+  request_delay: 2.5 # Wait 2.5 seconds between requests to prevent API rate limits
