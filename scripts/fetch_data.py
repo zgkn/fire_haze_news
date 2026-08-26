@@ -1,51 +1,40 @@
-from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit, urlunsplit
 import os
 import re
 import time
-import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlsplit, urlunsplit
 import pandas as pd
+import requests
+import yaml
 
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
-# Keywords targeting fire and haze hazards
-hazard_terms = (
-    '(haze OR "transboundary haze" OR smog OR jerebu OR "kabut asap" '
-    'OR "forest fire" OR wildfire OR "land fire" OR "peat fire" '
-    'OR karhutla OR "biomass burning" OR "open burning")'
-)
 
-# Southeast Asia country groups
-regions = {
-    "Indonesia": "Indonesia",
-    "Malaysia": "Malaysia",
-    "Singapore_Brunei": "(Singapore OR Brunei)",
-    "Thailand_Laos_Myanmar": "(Thailand OR Laos OR Myanmar)",
-    "Vietnam_Cambodia": "(Vietnam OR Cambodia)",
-    "Philippines": "Philippines",
-}
-
-# 30-day rolling time frame
-end = datetime.now(timezone.utc)
-start = end - timedelta(days=30)
-window_days = 5
+def load_config(config_path="config.yaml"):
+    """Load settings and queries from external YAML config file."""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found at '{config_path}'")
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
-def gdelt_dt(dt):
-    """Format datetime object into GDELT-compliant string."""
-    return dt.strftime("%Y%m%d%H%M%S")
+# Load runtime values from config
+CONFIG = load_config()
+HAZARD_TERMS = CONFIG["hazard_terms"]
+REGIONS = CONFIG["regions"]
+SETTINGS = CONFIG.get("gdelt_settings", {})
 
 
 def canonical_url(url):
-    """Normalize URL by stripping fragments, query params, and trailing slashes."""
     if not isinstance(url, str) or not url:
         return ""
     parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc.lower(), parts.path.rstrip("/"), "", ""))
+    return urlunsplit(
+        (parts.scheme, parts.netloc.lower(), parts.path.rstrip("/"), "", "")
+    )
 
 
 def normalize_title(title):
-    """Clean title string for duplicate title detection."""
     if not isinstance(title, str):
         return ""
     title = title.lower()
@@ -54,84 +43,99 @@ def normalize_title(title):
     return re.sub(r"\s+", " ", title).strip()
 
 
-rows = []
-cursor = start
-
-print("Starting GDELT data retrieval...")
-
-while cursor < end:
-    window_end = min(cursor + timedelta(days=window_days), end)
-
-    for region_name, region_query in regions.items():
-        query = f"{hazard_terms} {region_query}"
-
-        # Parameter names MUST be STARTDATETIME & ENDDATETIME in uppercase
-        params = {
-            "query": query,
-            "mode": "artlist",
-            "format": "json",
-            "maxrecords": 250,
-            "sort": "datedesc",
-            "STARTDATETIME": gdelt_dt(cursor),
-            "ENDDATETIME": gdelt_dt(window_end),
-        }
-
+def fetch_with_retry(params, max_retries=4):
+    """Fetch GDELT data with exponential backoff on timeouts or 429 rate limits."""
+    delay = 2
+    for attempt in range(max_retries):
         try:
-            response = requests.get(API, params=params, timeout=60)
+            response = requests.get(API, params=params, timeout=(10, 45))
+            if response.status_code == 429:
+                print(f"⚠️ Rate limited (429). Retrying in {delay}s...")
+                time.sleep(delay)
+                delay *= 2
+                continue
             response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError) as e:
-            print(f"Warning: Failed fetching {region_name} ({cursor.date()} - {window_end.date()}): {e}")
-            continue
+            return response.json()
+        except (requests.exceptions.RequestException, ValueError) as e:
+            if attempt == max_retries - 1:
+                print(f"❌ Permanent failure after {max_retries} retries: {e}")
+                return None
+            time.sleep(delay)
+            delay *= 2
+    return None
 
+
+def fetch_region_data(region_name, region_query):
+    query = f"{HAZARD_TERMS} {region_query}"
+    params = {
+        "query": query,
+        "mode": "artlist",
+        "format": "json",
+        "maxrecords": SETTINGS.get("max_records", 250),
+        "sort": SETTINGS.get("sort", "datedesc"),
+        "TIMESPAN": SETTINGS.get("timespan", "30d"),
+    }
+
+    time.sleep(SETTINGS.get("request_delay", 1.5))
+    payload = fetch_with_retry(params)
+    results = []
+
+    if payload and "articles" in payload:
         articles = payload.get("articles", [])
-        print(f"[{cursor.date()}] {region_name}: Retrieved {len(articles)} raw items.")
-
+        print(f"✓ [{region_name}] Retrieved {len(articles)} articles.")
         for article in articles:
-            rows.append({
-                "title": article.get("title"),
-                "url": article.get("url"),
-                "seen_date": article.get("seendate"),
-                "domain": article.get("domain"),
-                "language": article.get("language"),
-                "source_country": article.get("sourcecountry"),
-                "social_image": article.get("socialimage"),
-                "matched_region": region_name,
-                "window_start_utc": cursor.isoformat(),
-                "window_end_utc": window_end.isoformat(),
-                "query": query,
-            })
+            results.append(
+                {
+                    "title": article.get("title"),
+                    "url": article.get("url"),
+                    "seen_date": article.get("seendate"),
+                    "domain": article.get("domain"),
+                    "language": article.get("language"),
+                    "source_country": article.get("sourcecountry"),
+                    "social_image": article.get("socialimage"),
+                    "matched_region": region_name,
+                    "query": query,
+                }
+            )
+    else:
+        print(f"⚠️ [{region_name}] No articles returned or request failed.")
 
-        # Polite rate-limiting between API calls
-        time.sleep(1)
+    return results
 
-    cursor = window_end
 
-df = pd.DataFrame(rows)
+if __name__ == "__main__":
+    print("Starting resilient GDELT retrieval...")
+    all_rows = []
+    max_workers = SETTINGS.get("max_workers", 2)
 
-# Target static deployment folder
-output_dir = "docs"
-os.makedirs(output_dir, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(fetch_region_data, region_name, region_query)
+            for region_name, region_query in REGIONS.items()
+        ]
+        for future in as_completed(futures):
+            all_rows.extend(future.result())
 
-if not df.empty:
-    df["canonical_url"] = df["url"].apply(canonical_url)
-    df["normalized_title"] = df["title"].apply(normalize_title)
+    df = pd.DataFrame(all_rows)
+    output_dir = "docs"
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Convert date to UTC datetime & sort FIRST to prioritize latest articles during deduplication
-    df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
-    df = df.sort_values("seen_date", ascending=False, na_position="last")
+    if not df.empty:
+        df["canonical_url"] = df["url"].apply(canonical_url)
+        df["normalized_title"] = df["title"].apply(normalize_title)
+        df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
+        df = df.sort_values("seen_date", ascending=False, na_position="last")
+        df = df.drop_duplicates(subset=["canonical_url"], keep="first")
+        df = df.drop_duplicates(subset=["normalized_title"], keep="first")
 
-    # Deduplicate canonical URLs and titles
-    df = df.drop_duplicates(subset=["canonical_url"], keep="first")
-    df = df.drop_duplicates(subset=["normalized_title"], keep="first")
+        csv_path = os.path.join(output_dir, "sea_fire_haze_news_30d.csv")
+        json_path = os.path.join(output_dir, "data.json")
 
-    # Export dataset to docs/ folder for GitHub Pages
-    csv_path = os.path.join(output_dir, "sea_fire_haze_news_30d.csv")
-    json_path = os.path.join(output_dir, "data.json")
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        df.to_json(json_path, orient="records", date_format="iso")
 
-    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-    df.to_json(json_path, orient="records", date_format="iso")
-
-    print(f"\nPipeline complete! Successfully saved {len(df):,} de-duplicated articles to '{output_dir}/'.")
-else:
-    print("\nPipeline complete! No articles retrieved.")
+        print(
+            f"\n🎉 Successfully saved {len(df):,} de-duplicated articles to '{output_dir}/'."
+        )
+    else:
+        print("\nNo articles retrieved.")
