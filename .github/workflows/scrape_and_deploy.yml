@@ -2,7 +2,6 @@ name: Update Fire & Haze News Data
 
 on:
   schedule:
-    # Runs every 2 hours at offset minutes 3 and 33
     - cron: '7 */2 * * *'
   workflow_dispatch:      # Allows manual triggers from GitHub UI
   push:
