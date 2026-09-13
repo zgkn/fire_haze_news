@@ -82,23 +82,38 @@
 
       articles.forEach(art => {
         const dateStr = art.seen_date ? new Date(art.seen_date).toLocaleDateString() : 'N/A';
+
         const card = document.createElement('div');
         card.className = 'card';
-        card.innerHTML = `
-          <div>
-            <h3><a href="${art.url}" target="_blank" rel="noopener">${art.title || 'Untitled'}</a></h3>
-          </div>
-          <div class="meta">
-            <span>${art.domain || 'Source'} • ${dateStr}</span>
-            <span class="badge">${art.matched_region}</span>
-          </div>
-        `;
+
+        const titleDiv = document.createElement('div');
+        const h3 = document.createElement('h3');
+        const link = document.createElement('a');
+        link.href = /^https?:\/\//i.test(art.url || '') ? art.url : '#';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = art.title || 'Untitled';
+        h3.appendChild(link);
+        titleDiv.appendChild(h3);
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'meta';
+        const sourceSpan = document.createElement('span');
+        sourceSpan.textContent = `${art.domain || 'Source'} • ${dateStr}`;
+        const badgeSpan = document.createElement('span');
+        badgeSpan.className = 'badge';
+        badgeSpan.textContent = art.matched_region;
+        metaDiv.appendChild(sourceSpan);
+        metaDiv.appendChild(badgeSpan);
+
+        card.appendChild(titleDiv);
+        card.appendChild(metaDiv);
         grid.appendChild(card);
       });
     }
 
     function filterData() {
-      const search = document.getElementById('searchInput').value.lowerCase();
+      const search = document.getElementById('searchInput').value.toLowerCase();
       const region = document.getElementById('regionFilter').value;
 
       const filtered = rawArticles.filter(a => {
