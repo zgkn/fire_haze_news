@@ -21,6 +21,13 @@
     .badge { background: #e9ecef; color: #495057; padding: 0.2rem 0.5rem; border-radius: 3px; font-weight: 600; font-size: 0.75rem; }
     .download-btn { display: inline-block; background: #0275d8; color: white; padding: 0.5rem 1rem; text-decoration: none; border-radius: 4px; font-size: 0.9rem; }
     .download-container { margin-bottom: 1.5rem; display: flex; justify-content: flex-end; }
+    .trend-card { margin-bottom: 1.5rem; }
+    .trend-card h2 { margin: 0 0 0.75rem 0; font-size: 1rem; color: #333; }
+    .trend-chart-wrap { position: relative; }
+    .trend-chart-wrap svg { display: block; width: 100%; height: auto; }
+    .trend-tooltip { position: absolute; pointer-events: none; background: #0b0b0b; color: #fff; padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.8rem; white-space: nowrap; transform: translate(-50%, -100%); z-index: 1; }
+    .trend-tooltip-value { font-weight: 700; display: block; }
+    .trend-tooltip-date { color: #c3c2b7; font-size: 0.75rem; }
   </style>
 </head>
 <body>
@@ -33,6 +40,17 @@
   <main>
     <div class="download-container">
       <a href="sea_fire_haze_news_30d.csv" class="download-btn" download>📥 Download Raw CSV (30 Days)</a>
+    </div>
+
+    <div id="trendCard" class="card trend-card" hidden>
+      <h2>Daily Article Volume</h2>
+      <div id="trendChartWrap" class="trend-chart-wrap">
+        <div id="trendChart"></div>
+        <div id="trendTooltip" class="trend-tooltip" hidden>
+          <span class="trend-tooltip-value"></span>
+          <span class="trend-tooltip-date"></span>
+        </div>
+      </div>
     </div>
 
     <div class="controls">
@@ -57,6 +75,14 @@
         renderArticles(rawArticles);
       } catch (err) {
         document.getElementById('articlesGrid').innerHTML = `<p>Failed to load data. Ensures script has executed.</p>`;
+      }
+
+      try {
+        const trendRes = await fetch('trends.json');
+        const trends = await trendRes.json();
+        renderTrendChart(trends);
+      } catch (err) {
+        document.getElementById('trendCard').hidden = true;
       }
     }
 
@@ -110,6 +136,171 @@
         card.appendChild(metaDiv);
         grid.appendChild(card);
       });
+    }
+
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    function formatShortDate(dateStr) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return `${MONTHS[m - 1]} ${d}`;
+    }
+
+    function formatFullDate(dateStr) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return `${MONTHS[m - 1]} ${d}, ${y}`;
+    }
+
+    // Rounds up to a clean axis-max (1/2/5/10 x a power of ten).
+    function niceMax(value) {
+      if (value <= 0) return 1;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+      const residual = value / magnitude;
+      let niceResidual;
+      if (residual > 5) niceResidual = 10;
+      else if (residual > 2) niceResidual = 5;
+      else if (residual > 1) niceResidual = 2;
+      else niceResidual = 1;
+      return niceResidual * magnitude;
+    }
+
+    function renderTrendChart(trends) {
+      const card = document.getElementById('trendCard');
+      const wrap = document.getElementById('trendChart');
+      const tooltip = document.getElementById('trendTooltip');
+      wrap.innerHTML = '';
+
+      const data = trends.slice(-30);
+      if (data.length === 0) {
+        card.hidden = true;
+        return;
+      }
+      card.hidden = false;
+
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const W = 800, H = 220;
+      const padL = 40, padR = 12, padT = 12, padB = 28;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+
+      const maxCount = Math.max(...data.map(d => d.count));
+      const yMax = niceMax(maxCount);
+
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', `Daily article volume over the last ${data.length} days`);
+
+      // Gridlines + y-axis labels at 0, half, and max.
+      [0, yMax / 2, yMax].forEach(t => {
+        const y = padT + plotH - (t / yMax) * plotH;
+
+        const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', padL);
+        line.setAttribute('x2', W - padR);
+        line.setAttribute('y1', y);
+        line.setAttribute('y2', y);
+        line.setAttribute('stroke', '#e1e0d9');
+        line.setAttribute('stroke-width', '1');
+        svg.appendChild(line);
+
+        const label = document.createElementNS(svgNS, 'text');
+        label.setAttribute('x', padL - 8);
+        label.setAttribute('y', y + 3);
+        label.setAttribute('text-anchor', 'end');
+        label.setAttribute('font-size', '10');
+        label.setAttribute('fill', '#898781');
+        label.textContent = Math.round(t).toLocaleString();
+        svg.appendChild(label);
+      });
+
+      const n = data.length;
+      const slotW = plotW / n;
+      const barW = Math.max(2, Math.min(24, slotW - 2));
+      const radius = Math.min(4, barW / 2);
+      const labelEvery = Math.max(1, Math.ceil(n / 6));
+      const baseline = padT + plotH;
+      const BAR_COLOR = '#2a78d6';
+      const BAR_COLOR_HOVER = '#1c5cab';
+
+      data.forEach((d, i) => {
+        const x = padL + i * slotW + (slotW - barW) / 2;
+        const barH = yMax > 0 ? Math.max((d.count / yMax) * plotH, 0.001) : 0.001;
+        const y = baseline - barH;
+
+        const bar = document.createElementNS(svgNS, 'rect');
+        bar.setAttribute('x', x);
+        bar.setAttribute('y', y);
+        bar.setAttribute('width', barW);
+        bar.setAttribute('height', barH);
+        bar.setAttribute('rx', radius);
+        bar.setAttribute('ry', radius);
+        bar.setAttribute('fill', BAR_COLOR);
+        svg.appendChild(bar);
+
+        if (barH > radius) {
+          // Square off the bottom corners so the bar meets the baseline flush.
+          const squareOff = document.createElementNS(svgNS, 'rect');
+          squareOff.setAttribute('x', x);
+          squareOff.setAttribute('y', baseline - radius);
+          squareOff.setAttribute('width', barW);
+          squareOff.setAttribute('height', radius);
+          squareOff.setAttribute('fill', BAR_COLOR);
+          svg.appendChild(squareOff);
+        }
+
+        if (i % labelEvery === 0 || i === n - 1) {
+          const xLabel = document.createElementNS(svgNS, 'text');
+          xLabel.setAttribute('x', padL + i * slotW + slotW / 2);
+          xLabel.setAttribute('y', H - 8);
+          xLabel.setAttribute('text-anchor', 'middle');
+          xLabel.setAttribute('font-size', '10');
+          xLabel.setAttribute('fill', '#898781');
+          xLabel.textContent = formatShortDate(d.date);
+          svg.appendChild(xLabel);
+        }
+
+        // Hit target spans the full slot (wider than the bar itself) so
+        // hover/focus is easy to land even on thin or short bars.
+        const hit = document.createElementNS(svgNS, 'rect');
+        hit.setAttribute('x', padL + i * slotW);
+        hit.setAttribute('y', padT);
+        hit.setAttribute('width', slotW);
+        hit.setAttribute('height', plotH);
+        hit.setAttribute('fill', 'transparent');
+        hit.setAttribute('tabindex', '0');
+        hit.style.cursor = 'pointer';
+
+        const show = () => {
+          bar.setAttribute('fill', BAR_COLOR_HOVER);
+          tooltip.querySelector('.trend-tooltip-value').textContent =
+            `${d.count.toLocaleString()} article${d.count === 1 ? '' : 's'}`;
+          tooltip.querySelector('.trend-tooltip-date').textContent = formatFullDate(d.date);
+          tooltip.hidden = false;
+        };
+        const hide = () => {
+          bar.setAttribute('fill', BAR_COLOR);
+          tooltip.hidden = true;
+        };
+        const position = (clientX, clientY) => {
+          const wrapRect = wrap.getBoundingClientRect();
+          tooltip.style.left = `${clientX - wrapRect.left}px`;
+          tooltip.style.top = `${clientY - wrapRect.top - 8}px`;
+        };
+
+        hit.addEventListener('pointerenter', (e) => { show(); position(e.clientX, e.clientY); });
+        hit.addEventListener('pointermove', (e) => position(e.clientX, e.clientY));
+        hit.addEventListener('pointerleave', hide);
+        hit.addEventListener('focus', () => {
+          const box = hit.getBoundingClientRect();
+          show();
+          position(box.left + box.width / 2, box.top);
+        });
+        hit.addEventListener('blur', hide);
+
+        svg.appendChild(hit);
+      });
+
+      wrap.appendChild(svg);
     }
 
     function filterData() {

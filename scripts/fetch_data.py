@@ -17,6 +17,13 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 DEFAULT_CONFIG_PATH = os.path.join(REPO_ROOT, "config.yaml")
 DEFAULT_OUTPUT_DIR = os.path.join(REPO_ROOT, "docs")
 
+# Each run only queries a rolling 15-30 day GDELT window, so a long-lived
+# history file accumulates what's been seen across runs. Retention caps how
+# far back it grows so the repo doesn't grow unbounded.
+HISTORY_PATH = os.path.join(DEFAULT_OUTPUT_DIR, "history.csv")
+TRENDS_PATH = os.path.join(DEFAULT_OUTPUT_DIR, "trends.json")
+HISTORY_RETENTION_DAYS = 180
+
 
 def load_config(config_path=DEFAULT_CONFIG_PATH):
     """Load settings and queries from YAML configuration file."""
@@ -149,6 +156,47 @@ def fetch_region_data(region_name, region_query, hazard_terms, settings):
     return results, succeeded
 
 
+def update_history_and_trends(current_df):
+    """Merge this run's deduplicated articles into the long-lived history
+    file, trim it to the retention window, and recompute the daily
+    article-count series the frontend chart reads."""
+    if os.path.exists(HISTORY_PATH):
+        history_df = pd.read_csv(HISTORY_PATH, encoding="utf-8-sig")
+        history_df["seen_date"] = pd.to_datetime(
+            history_df["seen_date"], errors="coerce", utc=True
+        )
+    else:
+        history_df = pd.DataFrame(columns=current_df.columns)
+        # Give the empty seen_date column a real datetime dtype so it
+        # doesn't downcast the concatenated result to plain objects.
+        history_df["seen_date"] = pd.to_datetime(history_df["seen_date"], utc=True)
+
+    combined = pd.concat([history_df, current_df], ignore_index=True)
+    combined = combined.sort_values("seen_date", ascending=False, na_position="last")
+    combined = combined.drop_duplicates(subset=["canonical_url"], keep="first")
+    combined = combined.drop_duplicates(subset=["normalized_title"], keep="first")
+
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=HISTORY_RETENTION_DAYS)
+    combined = combined[combined["seen_date"].isna() | (combined["seen_date"] >= cutoff)]
+
+    combined.to_csv(HISTORY_PATH, index=False, encoding="utf-8-sig")
+
+    daily_counts = (
+        combined.dropna(subset=["seen_date"])
+        .assign(date=lambda d: d["seen_date"].dt.strftime("%Y-%m-%d"))
+        .groupby("date")
+        .size()
+        .reset_index(name="count")
+        .sort_values("date")
+    )
+    daily_counts.to_json(TRENDS_PATH, orient="records")
+
+    print(
+        f"📈 History now holds {len(combined):,} articles across "
+        f"{len(daily_counts):,} days (retention: {HISTORY_RETENTION_DAYS}d)."
+    )
+
+
 def main():
     config = load_config()
     hazard_terms = config["hazard_terms"]
@@ -188,6 +236,8 @@ def main():
 
         df.to_csv(csv_path, index=False, encoding="utf-8-sig")
         df.to_json(json_path, orient="records", date_format="iso")
+
+        update_history_and_trends(df)
 
         print(
             f"\n🎉 Extraction successful. Saved {len(df):,} deduplicated articles "
