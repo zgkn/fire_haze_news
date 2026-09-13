@@ -53,6 +53,26 @@ def normalize_title(title):
     return re.sub(r"\s+", " ", title).strip()
 
 
+def collapse_duplicates(df, key):
+    """Drop duplicate rows on `key`, keeping the first (most recent, since
+    callers sort by seen_date desc first) but merging every group member's
+    matched_region into the kept row instead of discarding the rest.
+    A haze story naming several neighboring countries otherwise gets
+    fetched under each country's query and then silently collapsed down
+    to whichever one happens to survive plain drop_duplicates."""
+
+    def merge_regions(values):
+        regions = set()
+        for value in values:
+            regions.update(r.strip() for r in str(value).split(",") if r.strip())
+        return ", ".join(sorted(regions))
+
+    region_by_key = df.groupby(key)["matched_region"].agg(merge_regions)
+    df = df.drop_duplicates(subset=[key], keep="first").copy()
+    df["matched_region"] = df[key].map(region_by_key)
+    return df
+
+
 # Reused across requests so TCP/TLS connections to the GDELT API are
 # kept alive instead of being re-established for every region.
 SESSION = requests.Session()
@@ -116,7 +136,10 @@ def fetch_with_retry(params, session=SESSION, max_retries=3):
 
 
 def fetch_region_data(region_name, region_query, hazard_terms, settings):
-    query = f"{hazard_terms} {region_query}"
+    # sourcecountry: restricts to articles GDELT attributes to that country,
+    # rather than any article that merely mentions the country's name in
+    # passing (which let unrelated stories bleed into every region's results).
+    query = f"{hazard_terms} sourcecountry:{region_query}"
     params = {
         "query": query,
         "mode": "artlist",
@@ -173,8 +196,8 @@ def update_history_and_trends(current_df):
 
     combined = pd.concat([history_df, current_df], ignore_index=True)
     combined = combined.sort_values("seen_date", ascending=False, na_position="last")
-    combined = combined.drop_duplicates(subset=["canonical_url"], keep="first")
-    combined = combined.drop_duplicates(subset=["normalized_title"], keep="first")
+    combined = collapse_duplicates(combined, "canonical_url")
+    combined = collapse_duplicates(combined, "normalized_title")
 
     cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=HISTORY_RETENTION_DAYS)
     combined = combined[combined["seen_date"].isna() | (combined["seen_date"] >= cutoff)]
@@ -228,8 +251,8 @@ def main():
         df["normalized_title"] = df["title"].apply(normalize_title)
         df["seen_date"] = pd.to_datetime(df["seen_date"], errors="coerce", utc=True)
         df = df.sort_values("seen_date", ascending=False, na_position="last")
-        df = df.drop_duplicates(subset=["canonical_url"], keep="first")
-        df = df.drop_duplicates(subset=["normalized_title"], keep="first")
+        df = collapse_duplicates(df, "canonical_url")
+        df = collapse_duplicates(df, "normalized_title")
 
         csv_path = os.path.join(DEFAULT_OUTPUT_DIR, "sea_fire_haze_news_30d.csv")
         json_path = os.path.join(DEFAULT_OUTPUT_DIR, "data.json")

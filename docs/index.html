@@ -86,8 +86,19 @@
       }
     }
 
+    // matched_region can list more than one country (e.g. "Indonesia,
+    // Malaysia") when a single story was picked up under multiple
+    // countries' queries, so it's parsed into a list everywhere it's
+    // filtered or used to populate options.
+    function parseRegions(art) {
+      return (art.matched_region || '')
+        .split(',')
+        .map(r => r.trim())
+        .filter(Boolean);
+    }
+
     function populateRegions(articles) {
-      const regions = [...new Set(articles.map(a => a.matched_region))].sort();
+      const regions = [...new Set(articles.flatMap(parseRegions))].sort();
       const select = document.getElementById('regionFilter');
       regions.forEach(r => {
         const opt = document.createElement('option');
@@ -310,7 +321,7 @@
       const filtered = rawArticles.filter(a => {
         const matchesSearch = (a.title && a.title.toLowerCase().includes(search)) || 
                               (a.domain && a.domain.toLowerCase().includes(search));
-        const matchesRegion = (region === 'ALL' || a.matched_region === region);
+        const matchesRegion = (region === 'ALL' || parseRegions(a).includes(region));
         return matchesSearch && matchesRegion;
       });
 

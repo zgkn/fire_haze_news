@@ -1,18 +1,23 @@
 hazard_terms: >-
-  (haze OR smog OR jerebu OR karhutla OR "forest fire" OR wildfire)
+  (haze OR smog OR jerebu OR karhutla OR "forest fire" OR wildfire OR "PM2.5"
+  OR หมอกควัน OR ไฟป่า OR "khói mù" OR "cháy rừng")
 
-# Every country separated into individual query keys
+# Values are GDELT sourcecountry: identifiers (full country name, lowercase,
+# no spaces - GDELT's documented alternative to a 2-letter FIPS code), not
+# free-text keywords. This restricts results to articles GDELT attributes to
+# that country, instead of any article that merely mentions the country's
+# name in passing.
 regions:
-  Indonesia: "Indonesia"
-  Malaysia: "Malaysia"
-  Singapore: "Singapore"
-  Brunei: "Brunei"
-  Thailand: "Thailand"
-  Laos: "Laos"
-  Myanmar: "Myanmar"
-  Vietnam: "Vietnam"
-  Cambodia: "Cambodia"
-  Philippines: "Philippines"
+  Indonesia: "indonesia"
+  Malaysia: "malaysia"
+  Singapore: "singapore"
+  Brunei: "brunei"
+  Thailand: "thailand"
+  Laos: "laos"
+  Myanmar: "myanmar"
+  Vietnam: "vietnam"
+  Cambodia: "cambodia"
+  Philippines: "philippines"
 
 gdelt_settings:
   max_records: 200
